@@ -125,7 +125,7 @@ for t = 0:time_step:time_total-time_step
             h_ethanol = (nusselt * k_ethanol)/dz;    % W/m²·K
             
             % Radial component of temperature change rate
-            Tdot_radial = (2*h_ethanol*r_jacket_outer*(T_ethanol-T(z)))/(ethanol_rho*ethanol_Cp*(r_jacket_outer - r_jacket_inner));
+            Tdot_radial = (2*h_ethanol*r_jacket_outer*(T_ethanol-T(z)))/(ethanol_rho*ethanol_Cp*(r_jacket_outer^2 - r_jacket_inner^2));
 
         else
             Tdot_radial = 0;
