@@ -1,3 +1,6 @@
+# PSPL Pressure drop model for R4, main purpose is to analyze pressure drop through feed system in lower plumbing
+# By Keshav Narayanan and Isaiah Jarvis
+
 from fluids import fittings
 from fluids import core
 from CoolProp import CoolProp as CP
