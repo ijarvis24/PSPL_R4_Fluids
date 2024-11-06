@@ -39,7 +39,7 @@ total_dp_eth = 0 * u.pascal
 total_dp_ox = 0 * u.pascal
 
 # Absolute roughness
-abs_rough = 0.015 * u.millimeter
+abs_rough = 0.0015 * u.millimeter
 
 # Derived constants for ethanol
 rho_eth = CP.PropsSI('D', 'P', sat_press_eth.magnitude, 'Q', 0, 'ethanol') * (u.kilogram / u.meter**3)
@@ -58,12 +58,14 @@ def pipe_properties(d_outer, thic, ar):
 
     line_vel_ox = (mdot_ox / (rho_ox * area)).to(u.meter / u.second)
     line_vel_eth = (mdot_eth / (rho_eth * area)).to(u.meter / u.second)
-    ed = ar.to(u.meter) / d_inner
+    rel_rough = core.relative_roughness(d_inner.magnitude, ar.to(u.meter).magnitude)
+    
+    ed = rel_rough / d_inner.magnitude
 
     re_ox = core.Reynolds(D=d_inner.magnitude, V=line_vel_ox.magnitude, nu=kinetic_mu_ox.magnitude)
     re_eth = core.Reynolds(D=d_inner.magnitude, V=line_vel_eth.magnitude, nu=kinetic_mu_eth.magnitude)
-    fric_ox = fittings.friction_factor(re_ox, eD=ed.magnitude)
-    fric_eth = fittings.friction_factor(re_eth, eD=ed.magnitude)
+    fric_ox = fittings.friction_factor(re_ox, eD=ed)
+    fric_eth = fittings.friction_factor(re_eth, eD=ed)
 
     return d_inner, line_vel_eth, line_vel_ox, re_eth, re_ox, fric_eth, fric_ox
 
@@ -92,7 +94,7 @@ def bend_dp_eth(angle, rad, d_outer, thic, ar):
     # Calcualation of loss coefficient
     K = fittings.bend_rounded(
         Di=d_inner.magnitude,  # Inner diameter
-        angle=angle.to(u.radian).magnitude,  # Convert angle to radians and get magnitude
+        angle=angle.magnitude,  # Convert angle to radians and get magnitude
         fd=fric_eth, 
         rc=rad.magnitude,  # Use magnitude of radius in meters
         Re=re_eth, 
@@ -109,7 +111,7 @@ def bend_dp_ox(angle, rad, d_outer, thic, ar):
     # Calcualation of loss coefficient
     K = fittings.bend_rounded(
         Di=d_inner.magnitude,  # Inner diameter
-        angle=angle.to(u.radian).magnitude,  # Convert angle to radians and get magnitude
+        angle=angle.magnitude,  # Convert angle to radians and get magnitude
         fd=fric_ox, 
         rc=rad.magnitude,  # Use magnitude of radius in meters
         Re=re_ox, 
