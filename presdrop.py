@@ -13,25 +13,26 @@ u = UnitRegistry()
 # Fluid Properties and other initial parameters
 chamber_press = 250 * u.psi  # Pressure in psi
 chamber_pres = chamber_press.to(u.pascal)  # Convert to pascals
-tank_press = 40 * u.psi  # Pressure in psi
-tank_press = tank_press.to(u.pascal)  # Convert to pascals
+tank_press_ox = 40 * u.psi  # Pressure in psi
+#added pressures for ethanol tank in the case they differ
+tank_press_eth = 40 * u.psi
+tank_press_ox = tank_press_ox.to(u.pascal)  # Convert to pascals
+tank_press_eth = tank_press_eth.to(u.pascal)
 
 injector_dp = chamber_press * 0.8  # 20% drop in pressure
 current_press_eth = injector_dp  # Set to injector dp because this is right before entering injector
 current_press_ox = injector_dp
 
 # Saturation pressures
-sat_press_eth = 1.134 * u.psi  # Ethanol saturation pressure
-sat_press_ox = 14.7 * u.psi  # LOx saturation pressure
+#changed -> pressure to temperature
+sat_temp_eth = CP.PropsSI('T', 'P', tank_press_eth.magnitude, 'Q', 0, 'ethanol') * u.kelvin  # Ethanol saturation temperature
+sat_temp_ox = CP.PropsSI('T', 'P', tank_press_ox.magnitude, 'Q', 0, 'oxygen') * u.kelvin  # LOx saturation temperature
 
-# Convert saturation pressures to pascals
-sat_press_eth = sat_press_eth.to(u.pascal)
-sat_press_ox = sat_press_ox.to(u.pascal)
 
 # Mass flow rates
 mdot_eth = 2.93 * (u.pound / u.second)  # Ethanol mass flow rate
 mdot_eth = mdot_eth.to(u.kilogram / u.second)  # Convert to kg/s
-mdot_ox = 4.68 * (u.pound / u.second)  # LOx mass flow rate
+mdot_ox = 3 * (u.pound / u.second)  # LOx mass flow rate
 mdot_ox = mdot_ox.to(u.kilogram / u.second)  # Convert to kg/s
 
 # Initial total pressure drops set to zero
@@ -39,16 +40,18 @@ total_dp_eth = 0 * u.pascal
 total_dp_ox = 0 * u.pascal
 
 # Absolute roughness
-abs_rough = 0.0015 * u.millimeter
+abs_rough = 0.0015 * u.millimeter  #Aluminum
 
 # Derived constants for ethanol
-rho_eth = CP.PropsSI('D', 'P', sat_press_eth.magnitude, 'Q', 0, 'ethanol') * (u.kilogram / u.meter**3)
-dynamic_mu_eth = CP.PropsSI('V', 'P', sat_press_eth.magnitude, 'Q', 0, 'ethanol') * (u.pascal * u.second)
+#to find density/viscosity you use pressure and temperature
+#1 Pa is added to pressure becuase the fluid is boiling at tank pressure -> hard to know density for computer
+rho_eth = CP.PropsSI('D', 'P', tank_press_eth.magnitude + 1, 'T', sat_temp_eth.magnitude, 'ethanol') * (u.kilogram / u.meter**3)
+dynamic_mu_eth = CP.PropsSI('V', 'P', tank_press_eth.magnitude + 1, 'T', sat_temp_eth.magnitude, 'ethanol') * (u.pascal * u.second)
 kinetic_mu_eth = dynamic_mu_eth / rho_eth
 
 # Derived constants for LOx
-rho_ox = CP.PropsSI('D', 'P', sat_press_ox.magnitude, 'Q', 0, 'oxygen') * (u.kilogram / u.meter**3)
-dynamic_mu_ox = CP.PropsSI('V', 'P', sat_press_ox.magnitude, 'Q', 0, 'oxygen') * (u.pascal * u.second)
+rho_ox = CP.PropsSI('D', 'P', tank_press_ox.magnitude + 1, 'T', sat_temp_ox.magnitude, 'oxygen') * (u.kilogram / u.meter**3)
+dynamic_mu_ox = CP.PropsSI('V', 'P', tank_press_ox.magnitude + 1, 'T', sat_temp_ox.magnitude, 'oxygen') * (u.pascal * u.second)
 kinetic_mu_ox = dynamic_mu_ox / rho_ox
 
 def pipe_properties(d_outer, thic, ar):
@@ -60,17 +63,18 @@ def pipe_properties(d_outer, thic, ar):
     line_vel_eth = (mdot_eth / (rho_eth * area)).to(u.meter / u.second)
     rel_rough = core.relative_roughness(d_inner.magnitude, ar.to(u.meter).magnitude)
     
-    ed = rel_rough / d_inner.magnitude
+    #relative roughness has already been calculated
+    #ed = rel_rough / d_inner.magnitude 
 
     re_ox = core.Reynolds(D=d_inner.magnitude, V=line_vel_ox.magnitude, nu=kinetic_mu_ox.magnitude)
     re_eth = core.Reynolds(D=d_inner.magnitude, V=line_vel_eth.magnitude, nu=kinetic_mu_eth.magnitude)
-    fric_ox = fittings.friction_factor(re_ox, eD=ed)
-    fric_eth = fittings.friction_factor(re_eth, eD=ed)
+    fric_ox = fittings.friction_factor(re_ox, eD=rel_rough)
+    fric_eth = fittings.friction_factor(re_eth, eD=rel_rough)
 
-    return d_inner, line_vel_eth, line_vel_ox, re_eth, re_ox, fric_eth, fric_ox
+    return d_inner, line_vel_eth, line_vel_ox, re_eth, re_ox, fric_eth, fric_ox, rel_rough
 
 def straight_dp_eth(length, d_outer, thic, ar):
-    (d_inner, line_vel_eth, line_vel_ox, re_eth, re_ox, fric_eth, fric_ox) = pipe_properties(d_outer, thic, ar)
+    (d_inner, line_vel_eth, line_vel_ox, re_eth, re_ox, fric_eth, fric_ox, rel_rough) = pipe_properties(d_outer, thic, ar)
     
     # Calcualation of loss coefficient
     K = core.K_from_f(fric_eth, length.to(u.meter).magnitude, d_inner.to(u.meter).magnitude)
@@ -79,7 +83,7 @@ def straight_dp_eth(length, d_outer, thic, ar):
     return dp
 
 def straight_dp_ox(length, d_outer, thic, ar):
-    (d_inner, line_vel_eth, line_vel_ox, re_eth, re_ox, fric_eth, fric_ox) = pipe_properties(d_outer, thic, ar)
+    (d_inner, line_vel_eth, line_vel_ox, re_eth, re_ox, fric_eth, fric_ox, rel_rough) = pipe_properties(d_outer, thic, ar)
     
     # Calcualation of loss coefficient
     K = core.K_from_f(fric_ox, length.to(u.meter).magnitude, d_inner.to(u.meter).magnitude)
@@ -88,7 +92,7 @@ def straight_dp_ox(length, d_outer, thic, ar):
     return dp
 
 def bend_dp_eth(angle, rad, d_outer, thic, ar):
-    (d_inner, line_vel_eth, line_vel_ox, re_eth, re_ox, fric_eth, fric_ox) = pipe_properties(d_outer, thic, ar)
+    (d_inner, line_vel_eth, line_vel_ox, re_eth, re_ox, fric_eth, fric_ox, rel_rough) = pipe_properties(d_outer, thic, ar)
 
     rad = rad.to(u.meter)  # Ensure radius is in meters
     # Calcualation of loss coefficient
@@ -105,7 +109,7 @@ def bend_dp_eth(angle, rad, d_outer, thic, ar):
     return dp
 
 def bend_dp_ox(angle, rad, d_outer, thic, ar):
-    (d_inner, line_vel_eth, line_vel_ox, re_eth, re_ox, fric_eth, fric_ox) = pipe_properties(d_outer, thic, ar)
+    (d_inner, line_vel_eth, line_vel_ox, re_eth, re_ox, fric_eth, fric_ox, rel_rough) = pipe_properties(d_outer, thic, ar)
 
     rad = rad.to(u.meter)  # Ensure radius is in meters
     # Calcualation of loss coefficient
@@ -123,7 +127,7 @@ def bend_dp_ox(angle, rad, d_outer, thic, ar):
 
 
 def ball_valve_dp_eth(cv, d_outer, thic, ar):
-    (d_inner, line_vel_eth, line_vel_ox, re_eth, re_ox, fric_eth, fric_ox) = pipe_properties(d_outer, thic, ar)
+    (d_inner, line_vel_eth, line_vel_ox, re_eth, re_ox, fric_eth, fric_ox, rel_rough) = pipe_properties(d_outer, thic, ar)
     
     d_inner = d_inner.to(u.meters)
     # Calcualation of loss coefficient
@@ -133,31 +137,66 @@ def ball_valve_dp_eth(cv, d_outer, thic, ar):
     return dp    
 
 def ball_valve_dp_ox(cv, d_outer, thic, ar):
-    (d_inner, line_vel_eth, line_vel_ox, re_eth, re_ox, fric_eth, fric_ox) = pipe_properties(d_outer, thic, ar)
+    (d_inner, line_vel_eth, line_vel_ox, re_eth, re_ox, fric_eth, fric_ox, rel_rough) = pipe_properties(d_outer, thic, ar)
 
-    d_inner = d_inner.to(u.meters)
     K = fittings.Cv_to_K(Cv = cv, D = d_inner.magnitude)
     dp = core.dP_from_K(K, rho=rho_ox.to(u.kilogram / (u.meter**3)).magnitude, V=line_vel_ox.to(u.meter / u.second).magnitude) * u.pascal
     dp = dp.to(u.psi)
     return dp
 
 def venturi_dp_eth(d_outer, thic, ar):
-    (d_inner, line_vel_eth, line_vel_ox, re_eth, re_ox, fric_eth, fric_ox) = pipe_properties(d_outer, thic, ar)
+    (d_inner, line_vel_eth, line_vel_ox, re_eth, re_ox, fric_eth, fric_ox, rel_rough) = pipe_properties(d_outer, thic, ar)
+
+
 
 def venturi_dp_ox(d_outer, thic, ar):
-    (d_inner, line_vel_eth, line_vel_ox, re_eth, re_ox, fric_eth, fric_ox) = pipe_properties(d_outer, thic, ar)
+    (d_inner, line_vel_eth, line_vel_ox, re_eth, re_ox, fric_eth, fric_ox, rel_rough) = pipe_properties(d_outer, thic, ar)
 
-def sharp_contraction_dp_eth(d_outer, thic, ar):
-    (d_inner, line_vel_eth, line_vel_ox, re_eth, re_ox, fric_eth, fric_ox) = pipe_properties(d_outer, thic, ar)
 
-def sharp_contraction_dp_ox(d_outer, thic, ar):
-    (d_inner, line_vel_eth, line_vel_ox, re_eth, re_ox, fric_eth, fric_ox) = pipe_properties(d_outer, thic, ar)
+#assumes both pipes have same thickness
+def sharp_contraction_dp_eth(d_outer_1, d_outer_2, thic, ar):
+    (d_inner_1, line_vel_eth, line_vel_ox, re_eth, re_ox, fric_eth, fric_ox, rel_rough) = pipe_properties(d_outer_1, thic, ar)
 
-def sharp_expansion_dp_eth(d_outer, thic, ar):
-    (d_inner, line_vel_eth, line_vel_ox, re_eth, re_ox, fric_eth, fric_ox) = pipe_properties(d_outer, thic, ar)
+    d_inner_2 = (d_outer_2 - 2 * thic).to(u.meter)
 
-def sharp_expansion_dp_ox(d_outer, thic, ar):
-    (d_inner, line_vel_eth, line_vel_ox, re_eth, re_ox, fric_eth, fric_ox) = pipe_properties(d_outer, thic, ar)
+    K = fittings.contraction_sharp(d_inner_1, d_inner_2, fric_eth, re_eth, rel_rough, 'Rennels')
+    #It is uncertain what velocity should be used to find the pressure drop -> initial, or final?
+    #this goes for all contractions and expansions
+    dp = core.dP_from_K(K, rho=rho_eth.to(u.kilogram / (u.meter**3)).magnitude, V=line_vel_eth.to(u.meter / u.second).magnitude) * u.pascal
+    dp = dp.to(u.psi)
+    return dp
+
+
+def sharp_contraction_dp_ox(d_outer_1, d_outer_2, thic, ar):
+    (d_inner_1, line_vel_eth, line_vel_ox, re_eth, re_ox, fric_eth, fric_ox, rel_rough) = pipe_properties(d_outer_1, thic, ar)
+
+    d_inner_2 = (d_outer_2 - 2 * thic).to(u.meter)
+
+    K = fittings.contraction_sharp(d_inner_1, d_inner_2, fric_ox, re_ox, rel_rough, 'Rennels')
+    dp = core.dP_from_K(K, rho=rho_ox.to(u.kilogram / (u.meter**3)).magnitude, V=line_vel_ox.to(u.meter / u.second).magnitude) * u.pascal
+    dp = dp.to(u.psi)
+    return dp
+
+
+def sharp_expansion_dp_eth(d_outer_1, d_outer_2, thic, ar):
+    (d_inner_1, line_vel_eth, line_vel_ox, re_eth, re_ox, fric_eth, fric_ox, rel_rough) = pipe_properties(d_outer_1, thic, ar)
+
+    d_inner_2 = (d_outer_2 - 2 * thic).to(u.meter)
+
+    K = fittings.diffuser_sharp(d_inner_1, d_inner_2, re_eth, fric_eth, rel_rough, 'Rennals')
+    dp = core.dP_from_K(K, rho=rho_eth.to(u.kilogram / (u.meter**3)).magnitude, V=line_vel_eth.to(u.meter / u.second).magnitude) * u.pascal
+    dp = dp.to(u.psi)
+    return dp
+
+def sharp_expansion_dp_ox(d_outer_1, d_outer_2, thic, ar):
+    (d_inner_1, line_vel_eth, line_vel_ox, re_eth, re_ox, fric_eth, fric_ox, rel_rough) = pipe_properties(d_outer_1, thic, ar)
+
+    d_inner_2 = (d_outer_2 - 2 * thic).to(u.meter)
+
+    K = fittings.diffuser_sharp(d_inner_1, d_inner_2, re_ox, fric_ox, rel_rough, 'Rennals')
+    dp = core.dP_from_K(K, rho=rho_ox.to(u.kilogram / (u.meter**3)).magnitude, V=line_vel_ox.to(u.meter / u.second).magnitude) * u.pascal
+    dp = dp.to(u.psi)
+    return dp
 
 
 def main():
@@ -167,7 +206,7 @@ def main():
     d_outer_tube = 0.5 * u.inches
     tube_thic = 0.083 * u.inches
     length1 = 1 * u.ft
-    angle1 = 45 * u.degrees
+    angle1 = 90 * u.degrees
     rad1 = 0.25 * u.inches
     cv_bv = 43 # Ball valuve flow coefficient
 
