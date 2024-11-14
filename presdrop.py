@@ -11,7 +11,7 @@ import pandas as pd
 u = UnitRegistry() 
 
 # Fluid Properties and other initial parameters
-chamber_press = 250 * u.psi  # Pressure in psi
+chamber_press = 300 * u.psi  # Pressure in psi
 chamber_pres = chamber_press.to(u.pascal)  # Convert to pascals
 tank_press = 40 * u.psi  # Pressure in psi
 tank_press = tank_press.to(u.pascal)  # Convert to pascals
